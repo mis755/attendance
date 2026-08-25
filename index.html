@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Attendance - Check In</title>
+<style>
+  :root{
+    --ink:#0f2440; --ink-soft:#5b6b80; --line:#e2e8f0;
+    --bg:#eef2f7; --card:#ffffff; --primary:#0f766e; --primary-dark:#0b5d56;
+    --present:#1b8a3f; --late:#e07b39; --absent:#c62828; --half:#b58a00;
+    --leave:#1565c0; --unpaid:#ad1457; --holiday:#78909c;
+    --radius:14px; --shadow:0 2px 10px rgba(15,36,64,.08);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    font-size:16px;line-height:1.45}
+  .wrap{max-width:480px;margin:0 auto;padding:0 14px 90px}
+  .hide{display:none !important}
+
+  header{background:var(--ink);color:#fff;padding:16px 14px 20px}
+  header .inner{max-width:480px;margin:0 auto}
+  header h1{margin:0;font-size:19px;font-weight:700}
+  header .topbar{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+  header .who{min-width:0}
+  header .meta{margin-top:6px;font-size:13px;color:#b9c7da;display:grid;gap:2px}
+  header .meta span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  header .meta .strong{color:#fff;font-weight:600}
+  .icon-btn{flex:none;background:rgba(255,255,255,.12);color:#fff;border-radius:10px;
+    padding:9px 10px;line-height:0}
+  .icon-btn:active{background:rgba(255,255,255,.25)}
+
+  .card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);
+    padding:16px;margin-top:14px}
+  .card h2{margin:0 0 12px;font-size:13px;letter-spacing:.9px;text-transform:uppercase;
+    color:var(--ink-soft);font-weight:700}
+  .rows{display:grid;gap:10px}
+  .row{display:flex;justify-content:space-between;align-items:center;font-size:15px;gap:10px}
+  .row span{color:var(--ink-soft)}
+  .row b{font-weight:600;font-variant-numeric:tabular-nums;text-align:right}
+
+  .pill{display:inline-block;padding:4px 12px;border-radius:999px;font-size:13px;
+    font-weight:700;color:#fff;letter-spacing:.3px}
+  .s-PRESENT{background:var(--present)} .s-LATE{background:var(--late)}
+  .s-ABSENT{background:var(--absent)} .s-HALFDAY{background:var(--half)}
+  .s-LEAVE{background:var(--leave)} .s-UNPAIDLEAVE{background:var(--unpaid)}
+  .s-HOLIDAY{background:var(--holiday)} .s-NONE{background:#90a4ae}
+  .s-Pending{background:var(--half)} .s-Approved{background:var(--present)}
+  .s-Rejected{background:var(--absent)} .s-Cancelled{background:#90a4ae}
+
+  button{font-family:inherit;font-size:16px;border:0;border-radius:12px;cursor:pointer}
+  .btn-main{width:100%;padding:20px;background:var(--primary);color:#fff;
+    font-size:19px;font-weight:700;letter-spacing:.6px;box-shadow:0 4px 0 var(--primary-dark)}
+  .btn-main:active{transform:translateY(2px);box-shadow:0 2px 0 var(--primary-dark)}
+  .btn-main[disabled]{background:#9fb3ae;box-shadow:none}
+  .btn-out{background:#12263f;box-shadow:0 4px 0 #0a1728}
+  .btn-line{width:100%;padding:13px;background:#fff;border:1.5px solid var(--line);
+    color:var(--ink);font-weight:600}
+  .btn-sm{padding:7px 12px;font-size:13px;background:#fff;border:1.5px solid var(--line);font-weight:600}
+  .btn-ghost{background:transparent;color:#b9c7da;padding:6px 0;font-size:14px}
+
+  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center}
+  .stat{background:#f6f8fb;border-radius:10px;padding:10px 4px}
+  .stat b{display:block;font-size:20px;font-variant-numeric:tabular-nums}
+  .stat span{font-size:11px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.4px}
+
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.5px;
+    color:var(--ink-soft);padding:6px 4px;border-bottom:1px solid var(--line)}
+  td{padding:9px 4px;border-bottom:1px solid #f1f4f8;font-variant-numeric:tabular-nums}
+
+  input,select,textarea{width:100%;padding:13px;border:1.5px solid var(--line);
+    border-radius:10px;font-size:16px;font-family:inherit;background:#fff;margin-top:6px}
+  textarea{min-height:78px;resize:vertical}
+  label{font-size:13px;font-weight:600;color:var(--ink-soft)}
+  .field{margin-bottom:13px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .check{display:flex;align-items:center;gap:10px;margin:4px 0 14px}
+  .check input{width:22px;height:22px;margin:0}
+
+  .msg{padding:12px 14px;border-radius:10px;font-size:14.5px;margin-top:12px;display:none}
+  .msg.show{display:block}
+  .msg.ok{background:#e6f4ea;color:#1b5e20;border:1px solid #b7dfc2}
+  .msg.err{background:#fdecea;color:#a01d1d;border:1px solid #f3c2bd}
+  .msg.info{background:#e8f0fe;color:#174ea6;border:1px solid #c3d5f7}
+  .msg b{display:block;margin-top:4px;font-weight:700}
+
+  .note{font-size:13px;color:var(--ink-soft);margin-top:8px}
+  .item{border-bottom:1px solid #f1f4f8;padding:12px 0}
+  .item:last-child{border-bottom:0}
+  .item .top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .item .sub{font-size:13px;color:var(--ink-soft);margin-top:4px}
+  .hol{display:flex;align-items:center;gap:13px;padding:11px 0;border-bottom:1px solid #f1f4f8}
+  .hol:last-child{border-bottom:0}
+  .hol-d{flex:none;width:48px;text-align:center;background:#f4f7fa;border-radius:9px;padding:6px 0}
+  .hol-d b{display:block;font-size:19px;line-height:1.1;font-variant-numeric:tabular-nums}
+  .hol-d span{display:block;font-size:10px;letter-spacing:.7px;color:var(--ink-soft);font-weight:700}
+  .hol-t{flex:1;min-width:0}
+  .hol-t b{display:block;font-size:15px}
+  .hol-t span{display:block;font-size:12.5px;color:var(--ink-soft);margin-top:1px}
+  .hol-tag{flex:none;font-size:10.5px;font-weight:700;letter-spacing:.4px;padding:3px 9px;
+    border-radius:999px;background:#e6f4ea;color:#1b5e20}
+  .pol{border-left:3px solid var(--primary);padding:2px 0 2px 12px;margin-bottom:14px}
+  .pol b{display:block;font-size:14.5px}
+  .pol span{font-size:13.5px;color:var(--ink-soft)}
+
+  /* bottom navigation */
+  nav{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);
+    display:flex;z-index:30;box-shadow:0 -2px 10px rgba(15,36,64,.06)}
+  nav button{flex:1;background:none;border:0;padding:9px 1px 10px;font-size:9.5px;
+    color:var(--ink-soft);font-weight:600;letter-spacing:.2px;border-radius:0}
+  nav button i{display:block;font-size:19px;font-style:normal;margin-bottom:2px}
+  nav button.on{color:var(--primary)}
+  nav .dot{display:inline-block;min-width:16px;padding:0 4px;background:var(--absent);color:#fff;
+    border-radius:9px;font-size:10px;line-height:16px;margin-left:3px}
+
+  /* camera */
+  #camera{position:fixed;inset:0;background:#000;z-index:50;display:none;
+    flex-direction:column;align-items:center;justify-content:center}
+  #camera.on{display:flex}
+  #cam-stage{width:100%;max-width:480px;aspect-ratio:3/4;background:#111;
+    position:relative;overflow:hidden}
+  #cam-stage video,#cam-stage canvas{width:100%;height:100%;object-fit:cover;
+    transform:scaleX(-1);position:absolute;inset:0}
+  #cam-hint{color:#fff;font-size:14px;padding:14px 20px;text-align:center;opacity:.9}
+  #cam-actions{width:100%;max-width:480px;padding:16px;display:grid;gap:10px}
+  #shutter{width:76px;height:76px;border-radius:50%;background:#fff;border:5px solid #cfd8dc;
+    margin:0 auto;display:block}
+
+  #busy{position:fixed;inset:0;background:rgba(15,36,64,.75);color:#fff;z-index:60;
+    display:none;align-items:center;justify-content:center;font-size:16px;text-align:center;padding:30px}
+  #busy.on{display:flex}
+  .spin{width:34px;height:34px;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;
+    border-radius:50%;animation:sp 1s linear infinite;margin:0 auto 14px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.spin{animation:none}}
+  .foot{text-align:center;color:var(--ink-soft);font-size:12px;margin-top:16px}
+
+  /* pay slip */
+  #slip{background:#fff;border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;margin-top:14px}
+  #slip .head{background:var(--ink);color:#fff;padding:16px}
+  #slip .head b{font-size:17px;display:block}
+  #slip .head span{font-size:13px;color:#b9c7da}
+  #slip .sec{padding:4px 16px 12px}
+  #slip .sect{background:#f2f5f9;padding:7px 16px;font-size:11px;font-weight:700;letter-spacing:1px}
+  #slip .net{background:var(--primary);color:#fff;padding:14px 16px;display:flex;
+    justify-content:space-between;font-size:17px;font-weight:700}
+  @media print{
+    body{background:#fff}
+    header,nav,.noprint,#busy{display:none !important}
+    .wrap{padding:0;max-width:100%}
+    #slip{box-shadow:none;border:1px solid #ccc}
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<div id="view-login">
+  <header><div class="inner">
+    <h1>Attendance</h1>
+    <div class="meta">Sign in with your Employee ID</div>
+  </div></header>
+  <div class="wrap">
+    <div class="card">
+      <div class="field">
+        <label for="in-id">Employee ID</label>
+        <input id="in-id" autocomplete="username" placeholder="E001" autocapitalize="characters">
+      </div>
+      <div class="field">
+        <label for="in-pw">Password</label>
+        <input id="in-pw" type="password" autocomplete="current-password" placeholder="••••">
+      </div>
+      <button class="btn-main" onclick="doLogin()">Log in</button>
+      <div id="login-msg" class="msg err"></div>
+    </div>
+    <div class="foot">Allow camera and location when your phone asks.</div>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="view-home" class="hide">
+  <header><div class="inner topbar">
+    <div class="who">
+      <h1 id="h-name">Hello</h1>
+      <div class="meta">
+        <span id="h-emp"></span>
+        <span id="h-site"></span>
+        <span id="h-shift"></span>
+      </div>
+    </div>
+    <button class="icon-btn" onclick="doLogout()" title="Log out" aria-label="Log out">
+      <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+        <polyline points="16 17 21 12 16 7"></polyline>
+        <line x1="21" y1="12" x2="9" y2="12"></line>
+      </svg>
+    </button>
+  </div></header>
+
+  <div class="wrap">
+
+    <!-- ---------- TAB: TODAY ---------- -->
+    <div id="tab-today">
+      <div class="card">
+        <h2>Today's attendance</h2>
+        <div class="rows">
+          <div class="row"><span>Status</span><b><span id="t-status" class="pill s-NONE">NOT MARKED</span></b></div>
+          <div class="row"><span>Check in</span><b id="t-in">--</b></div>
+          <div class="row"><span>Check out</span><b id="t-out">--</b></div>
+          <div class="row"><span>Distance from site</span><b id="t-dist">--</b></div>
+          <div class="row"><span>Day</span><b id="t-day">--</b></div>
+        </div>
+      </div>
+
+      <div style="margin-top:14px">
+        <button id="btn-action" class="btn-main" onclick="startPunch()">CHECK IN</button>
+        <div id="home-msg" class="msg"></div>
+      </div>
+
+      <div class="card">
+        <h2>This month</h2>
+        <div class="grid3">
+          <div class="stat"><b id="m-present">0</b><span>Present</span></div>
+          <div class="stat"><b id="m-late">0</b><span>Late</span></div>
+          <div class="stat"><b id="m-absent">0</b><span>Absent</span></div>
+        </div>
+        <div class="rows" style="margin-top:14px">
+          <div class="row"><span>Late marks used</span><b id="m-lm">0</b></div>
+          <div class="row"><span>Paid leave balance</span><b id="m-bal">0</b></div>
+        </div>
+        <div id="m-lmnote" class="msg info show" style="margin-top:10px"></div>
+      </div>
+
+      <div class="foot" id="foot-time"></div>
+    </div>
+
+    <!-- ---------- TAB: LEAVES ---------- -->
+    <div id="tab-leave" class="hide">
+      <div class="card">
+        <h2>My leave balance</h2>
+        <div class="grid3">
+          <div class="stat"><b id="lb-credit">0</b><span>Credited</span></div>
+          <div class="stat"><b id="lb-used">0</b><span>Used</span></div>
+          <div class="stat"><b id="lb-bal">0</b><span>Available</span></div>
+        </div>
+        <div class="note" id="lb-note"></div>
+      </div>
+
+      <div class="card">
+        <h2>Apply for leave</h2>
+        <div class="field">
+          <label for="lv-type">Leave type</label>
+          <select id="lv-type" onchange="previewLeave()"></select>
+        </div>
+        <div class="two">
+          <div class="field">
+            <label for="lv-from">From date</label>
+            <input id="lv-from" type="date" onchange="previewLeave()">
+          </div>
+          <div class="field">
+            <label for="lv-to">To date</label>
+            <input id="lv-to" type="date" onchange="previewLeave()">
+          </div>
+        </div>
+        <div id="lv-preview" class="msg info"></div>
+        <div class="field" style="margin-top:12px">
+          <label for="lv-desc">Description / reason</label>
+          <textarea id="lv-desc" placeholder="Personal work"></textarea>
+        </div>
+        <div class="check">
+          <input type="checkbox" id="lv-emg">
+          <label for="lv-emg" style="margin:0">This is an emergency leave</label>
+        </div>
+        <button class="btn-main" style="padding:16px;font-size:17px" onclick="submitLeave()">Submit application</button>
+        <div id="lv-msg" class="msg"></div>
+      </div>
+
+      <div class="card">
+        <h2>My applications</h2>
+        <div class="grid4" style="margin-bottom:8px">
+          <div class="stat"><b id="lc-pending">0</b><span>Pending</span></div>
+          <div class="stat"><b id="lc-approved">0</b><span>Approved</span></div>
+          <div class="stat"><b id="lc-rejected">0</b><span>Rejected</span></div>
+          <div class="stat"><b id="lc-cancelled">0</b><span>Cancelled</span></div>
+        </div>
+        <div id="lv-list"><div class="note">No applications yet.</div></div>
+      </div>
+    </div>
+
+    <!-- ---------- TAB: PAY SLIP ---------- -->
+    <div id="tab-slip" class="hide">
+      <div class="card noprint">
+        <h2>My pay slips</h2>
+        <div class="field">
+          <label for="ps-month">Select month</label>
+          <select id="ps-month"></select>
+        </div>
+        <button class="btn-line" onclick="loadSlip()">View pay slip</button>
+        <div id="ps-msg" class="msg"></div>
+      </div>
+      <div id="slip" class="hide"></div>
+      <button id="ps-print" class="btn-line noprint hide" style="margin-top:12px"
+              onclick="window.print()">Print / save as PDF</button>
+    </div>
+
+    <!-- ---------- TAB: HISTORY ---------- -->
+    <div id="tab-hist" class="hide">
+      <div class="card">
+        <h2>My attendance history</h2>
+        <table>
+          <thead><tr><th>Date</th><th>In</th><th>Out</th><th>Status</th></tr></thead>
+          <tbody id="recent"><tr><td colspan="4">No records yet.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ---------- TAB: POLICIES ---------- -->
+    <!-- ---------- TAB: HOLIDAYS ---------- -->
+    <div id="tab-hol" class="hide">
+      <div class="card">
+        <h2>Upcoming holidays</h2>
+        <div id="hol-list"><div class="note">None coming up.</div></div>
+      </div>
+      <div class="foot">Paid holidays par attendance ki zaroorat nahi hai.</div>
+    </div>
+
+    <div id="tab-pol" class="hide">
+      <div class="card">
+        <h2>My policies <span id="pol-dept" style="text-transform:none"></span></h2>
+        <div id="pol-list"><div class="note">No policies to show.</div></div>
+      </div>
+    </div>
+
+  </div>
+
+  <nav>
+    <button id="nav-today" class="on" onclick="go('today')"><i>&#9679;</i>Today</button>
+    <button id="nav-leave" onclick="go('leave')"><i>&#9993;</i>Leaves<span id="nav-badge" class="dot hide">0</span></button>
+    <button id="nav-slip" onclick="go('slip')"><i>&#8377;</i>Pay slip</button>
+    <button id="nav-hist" onclick="go('hist')"><i>&#8801;</i>History</button>
+    <button id="nav-hol" onclick="go('hol')"><i>&#9873;</i>Holidays</button>
+    <button id="nav-pol" onclick="go('pol')"><i>&#9998;</i>Policies</button>
+  </nav>
+</div>
+
+<!-- ============ CAMERA ============ -->
+<div id="camera">
+  <div id="cam-hint">Take a clear photo of your face at the site.</div>
+  <div id="cam-stage">
+    <video id="cam-video" autoplay playsinline muted></video>
+    <canvas id="cam-canvas" class="hide"></canvas>
+  </div>
+  <div id="cam-actions">
+    <div id="cam-live">
+      <button id="shutter" onclick="shoot()" aria-label="Take photo"></button>
+      <button class="btn-ghost" style="width:100%;margin-top:10px" onclick="closeCamera()">Cancel</button>
+    </div>
+    <div id="cam-confirm" class="two hide">
+      <button class="btn-line" onclick="retake()">Retake</button>
+      <button class="btn-main" style="padding:14px" onclick="confirmPhoto()">Use photo</button>
+    </div>
+  </div>
+</div>
+
+<div id="busy"><div><div class="spin"></div><div id="busy-text">Working…</div></div></div>
+
+<script>
+/*********************************************************************
+ * If you host this page outside Apps Script, paste your /exec URL here.
+ *********************************************************************/
+/*********************************************************************
+ *  >>>>>>  YAHAN APNA /exec LINK PASTE KARO  <<<<<<
+ *********************************************************************/
+var API_URL = 'https://script.google.com/macros/s/AKfycbykfrkZnuE-aYTjv82Bh7f0VeOB4EYmoNykV11uAErVfE870zAWU47xC-XbsYFjjCxJ/exec';
+/********************************************************************/
+
+var S = { token: null, profile: null, photo: null, mode: 'IN', stream: null,
+          dash: null, pos: null };
+
+/********************* API *********************/
+/** Never let a request hang forever - 45 seconds and we give up with a message. */
+function withTimeout(promise, ms) {
+  return new Promise(function (res, rej) {
+    var done = false;
+    var timer = setTimeout(function () {
+      if (done) return;
+      done = true;
+      rej(new Error('The server did not respond. Please check your internet and try again.'));
+    }, ms || 45000);
+    promise.then(
+      function (v) { if (!done) { done = true; clearTimeout(timer); res(v); } },
+      function (e) { if (!done) { done = true; clearTimeout(timer); rej(e); } }
+    );
+  });
+}
+
+function api(action, payload) {
+  var body = Object.assign({ action: action, token: S.token || '' }, payload || {});
+  if (!API_URL || API_URL.indexOf('http') !== 0) {
+    return Promise.reject(new Error(
+      'Setup incomplete: is file me API_URL line par apna /exec link paste karein.'));
+  }
+  var call = fetch(API_URL, {
+    method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(body), redirect: 'follow'
+  }).then(function (r) { return r.text(); })
+    .then(function (txt) {
+      var r;
+      try { r = JSON.parse(txt); } catch (e) { throw new Error('Server ka jawab samajh nahi aaya.'); }
+      if (!r.ok) throw new Error(r.error);
+      return r.data;
+    });
+
+  return withTimeout(call, 45000);
+}
+
+/********************* helpers *********************/
+function $(id) { return document.getElementById(id); }
+function show(id) { $(id).classList.remove('hide'); }
+function hide(id) { $(id).classList.add('hide'); }
+function busy(on, text) {
+  $('busy-text').textContent = text || 'Working…';
+  $('busy').classList.toggle('on', !!on);
+}
+function say(id, text, kind, extra) {
+  var el = $(id);
+  el.className = 'msg show ' + (kind || 'ok');
+  el.innerHTML = text + (extra ? '<b>' + extra + '</b>' : '');
+}
+function clearMsg(id) { $(id).className = 'msg'; }
+function sc(s) { return 's-' + String(s || 'NONE').replace(/\s+/g, ''); }
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+  });
+}
+function money(n) { return '\u20B9 ' + Number(n || 0).toFixed(2); }
+function today() { return new Date().toISOString().slice(0, 10); }
+
+function go(tab) {
+  ['today', 'leave', 'slip', 'hist', 'hol', 'pol'].forEach(function (t) {
+    $('tab-' + t).classList.toggle('hide', t !== tab);
+    $('nav-' + t).classList.toggle('on', t === tab);
+  });
+  window.scrollTo(0, 0);
+  if (tab === 'leave') loadLeaves();
+  if (tab === 'slip') loadSlipMonths();
+}
+
+/********************* login *********************/
+function doLogin() {
+  var id = $('in-id').value.trim(), pw = $('in-pw').value;
+  if (!id || !pw) return say('login-msg', 'Enter your Employee ID and password.', 'err');
+  busy(true, 'Signing in…');
+  api('loginAny', { empId: id, password: pw })
+    .then(function (d) {
+      // Admin ne login kiya -> admin dashboard par bhej do
+      if (d.role === 'Admin') {
+        try { localStorage.setItem('att_admin_token', d.token); } catch (e) {}
+        busy(true, 'Opening admin dashboard…');
+        window.location.href = 'admin.html';
+        return;
+      }
+      S.token = d.token;
+      try { localStorage.setItem('att_token', d.token); } catch (e) {}
+      clearMsg('login-msg');
+      hide('view-login'); show('view-home');
+      // dashboard login ke saath hi aa gaya - dusri request ki zaroorat nahi
+      if (d.dashboard) {
+        busy(false);
+        try { localStorage.setItem('att_dash', JSON.stringify(d.dashboard)); } catch (e) {}
+        paintHome(d.dashboard);
+      } else {
+        loadHome();
+      }
+    })
+    .catch(function (e) { busy(false); say('login-msg', e.message, 'err'); });
+}
+
+function doLogout() {
+  api('logout', {}).catch(function () {});
+  try { localStorage.removeItem('att_token'); localStorage.removeItem('att_dash'); } catch (e) {}
+  S.token = null; S.dash = null;
+  hide('view-home'); show('view-login');
+}
+
+/********************* dashboard *********************/
+/**
+ * SPEED FELT BY THE USER:
+ * the last dashboard is kept on the phone, so the screen appears
+ * instantly and then quietly updates when the server replies.
+ */
+function loadHome(silent) {
+  var cached = null;
+  try { cached = JSON.parse(localStorage.getItem('att_dash') || 'null'); } catch (e) {}
+  if (cached && !S.dash) { paintHome(cached); silent = true; }
+
+  if (!silent) busy(true, 'Loading your attendance…');
+  else $('foot-time').textContent = 'Updating…';
+
+  api('myDashboard', {})
+    .then(function (d) {
+      busy(false);
+      try { localStorage.setItem('att_dash', JSON.stringify(d)); } catch (e) {}
+      paintHome(d);
+    })
+    .catch(function (e) {
+      busy(false);
+      if (/session/i.test(e.message)) { doLogout(); say('login-msg', e.message, 'err'); }
+      else say('home-msg', e.message, 'err');
+    });
+}
+
+function paintHome(d) {
+  (function () {
+      S.dash = d; S.profile = d.profile;
+
+      $('h-name').textContent = 'Hello, ' + d.profile.name;
+      $('h-emp').textContent = d.profile.empId +
+        (d.profile.department ? '  •  ' + d.profile.department : '');
+      $('h-site').className = 'strong';
+      $('h-site').textContent = d.profile.siteName;
+      $('h-shift').textContent = d.policy.startTime + ' - ' + d.policy.endTime +
+        '   •   late after ' + d.policy.lateThreshold;
+      $('foot-time').textContent = 'Server time: ' + d.serverTime;
+
+      var t = d.today;
+      $('t-status').textContent = t ? t.status : 'NOT MARKED';
+      $('t-status').className = 'pill ' + sc(t ? t.status : 'NONE');
+      $('t-in').textContent = t ? t.checkIn : '--';
+      $('t-out').textContent = t ? t.checkOut : '--';
+      $('t-dist').textContent = (t && t.distance) ? t.distance + ' m' : '--';
+      $('t-day').textContent = d.dayType.name;
+
+      var btn = $('btn-action');
+      if (d.monthLocked) {
+        btn.textContent = 'MONTH LOCKED'; btn.disabled = true; btn.className = 'btn-main';
+        say('home-msg', 'Attendance for this month is locked. Please contact Admin.', 'err');
+      } else if (!t || t.checkIn === '--') {
+        S.mode = 'IN'; btn.textContent = 'CHECK IN';
+        btn.className = 'btn-main'; btn.disabled = false;
+      } else if (t.checkOut === '--') {
+        S.mode = 'OUT'; btn.textContent = 'CHECK OUT';
+        btn.className = 'btn-main btn-out'; btn.disabled = false;
+      } else {
+        btn.textContent = 'DONE FOR TODAY'; btn.className = 'btn-main'; btn.disabled = true;
+      }
+
+      $('m-present').textContent = d.summary.present;
+      $('m-late').textContent = d.summary.late;
+      $('m-absent').textContent = d.summary.absent;
+      $('m-lm').textContent = d.lateMarks.count + ' of ' + d.lateMarks.grace + ' free';
+      $('m-bal').textContent = d.leaveBalance.balance + ' day(s)';
+
+      var note = $('m-lmnote');
+      if (d.lateMarks.deductible > 0) {
+        note.className = 'msg err show';
+        note.textContent = d.lateMarks.deductible + ' late mark(s) beyond the free ' +
+          d.lateMarks.grace + ' this month = ' + d.lateMarks.totalDeductionDays + ' day salary deduction.';
+      } else {
+        note.className = 'msg info show';
+        note.textContent = d.lateMarks.freeLeft + ' free late mark(s) left this month. ' +
+          'From late mark ' + (d.lateMarks.grace + 1) + ', each one deducts ' +
+          d.lateMarks.deductionDays + ' day salary.';
+      }
+
+      var hl = $('hol-list');
+      hl.innerHTML = '';
+      if (!d.holidays.length) {
+        hl.innerHTML = '<div class="note">Aage koi holiday nahi hai.</div>';
+      }
+      var MON = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+      d.holidays.forEach(function (h) {
+        var mi = Number(h.date.slice(5, 7)) - 1;
+        var el = document.createElement('div');
+        el.className = 'hol';
+        el.innerHTML =
+          '<div class="hol-d"><b>' + h.date.slice(8) + '</b><span>' + (MON[mi] || '') + '</span></div>' +
+          '<div class="hol-t"><b>' + esc(h.name) + '</b><span>' + esc(h.day) + ' • ' +
+          h.date.slice(0, 4) + '</span></div>' +
+          '<span class="hol-tag">' + (h.paid ? 'Paid' : 'Unpaid') + '</span>';
+        hl.appendChild(el);
+      });
+
+      var tb = $('recent');
+      tb.innerHTML = d.recent.length ? '' : '<tr><td colspan="4">No records yet.</td></tr>';
+      d.recent.forEach(function (r) {
+        var tr = document.createElement('tr');
+        tr.innerHTML = '<td>' + r.date.slice(8) + '/' + r.date.slice(5, 7) + '</td><td>' +
+          r.checkIn + '</td><td>' + r.checkOut + '</td><td><span class="pill ' + sc(r.status) +
+          '" style="font-size:11px;padding:3px 8px">' + r.status + '</span></td>';
+        tb.appendChild(tr);
+      });
+
+      $('pol-dept').textContent = d.profile.department ? '(' + d.profile.department + ')' : '';
+      var pl = $('pol-list');
+      pl.innerHTML = '';
+      if (!d.policies || !d.policies.length) {
+        pl.innerHTML = '<div class="note">No policies published for your department.</div>';
+      }
+      (d.policies || []).forEach(function (p) {
+        var el = document.createElement('div');
+        el.className = 'pol';
+        el.innerHTML = '<b>' + esc(p.title) + '</b><span>' + esc(p.text) + '</span>';
+        pl.appendChild(el);
+      });
+  })();
+}
+
+/********************* leaves *********************/
+function loadLeaves() {
+  busy(true, 'Loading your leaves…');
+  api('myLeaves', {})
+    .then(function (d) {
+      busy(false);
+      $('lb-credit').textContent = d.balance.credited;
+      $('lb-used').textContent = d.balance.used;
+      $('lb-bal').textContent = d.balance.balance;
+      $('lb-note').textContent = d.balance.credited +
+        ' paid leave(s) are credited every month. Paid types: ' +
+        (d.paidTypes.length ? d.paidTypes.join(', ') : 'none') + '.';
+
+      var sel = $('lv-type');
+      if (!sel.options.length) {
+        d.types.forEach(function (t) {
+          var o = document.createElement('option');
+          o.value = t; o.textContent = t;
+          sel.appendChild(o);
+        });
+      }
+
+      $('lc-pending').textContent = d.counts.pending;
+      $('lc-approved').textContent = d.counts.approved;
+      $('lc-rejected').textContent = d.counts.rejected;
+      $('lc-cancelled').textContent = d.counts.cancelled;
+
+      var badge = $('nav-badge');
+      badge.textContent = d.counts.pending;
+      badge.classList.toggle('hide', !d.counts.pending);
+
+      var box = $('lv-list');
+      box.innerHTML = d.list.length ? '' : '<div class="note">No applications yet.</div>';
+      d.list.forEach(function (r) {
+        var el = document.createElement('div');
+        el.className = 'item';
+        var cancel = r.status === 'Pending'
+          ? '<button class="btn-sm" onclick="cancelLeave(\'' + r.leaveId + '\')">Cancel</button>' : '';
+        el.innerHTML =
+          '<div class="top"><b>' + esc(r.type) + '</b>' +
+          '<span class="pill ' + sc(r.status) + '" style="font-size:11px;padding:3px 9px">' +
+          esc(r.status) + '</span></div>' +
+          '<div class="sub">' + r.from + ' to ' + r.to + ' • ' + r.days + ' day(s)' +
+          (r.unpaidDays ? ' • ' + r.unpaidDays + ' unpaid' : ' • paid') +
+          (r.emergency ? ' • emergency' : '') + '</div>' +
+          '<div class="sub">' + esc(r.description) + '</div>' +
+          (r.remarks ? '<div class="sub">Remarks: ' + esc(r.remarks) + '</div>' : '') +
+          (cancel ? '<div style="margin-top:8px">' + cancel + '</div>' : '');
+        box.appendChild(el);
+      });
+    })
+    .catch(function (e) { busy(false); say('lv-msg', e.message, 'err'); });
+}
+
+function previewLeave() {
+  var from = $('lv-from').value, to = $('lv-to').value || $('lv-from').value;
+  if (!from) return;
+  api('previewLeave', { from: from, to: to, type: $('lv-type').value })
+    .then(function (d) {
+      var el = $('lv-preview');
+      el.className = 'msg show ' + (d.unpaid > 0 ? 'err' : 'info');
+      el.innerHTML = 'Leave days: <b style="display:inline">' + d.days + '</b> — ' + d.note;
+    })
+    .catch(function () {});
+}
+
+function submitLeave() {
+  var from = $('lv-from').value, to = $('lv-to').value || $('lv-from').value;
+  var desc = $('lv-desc').value.trim();
+  if (!from) return say('lv-msg', 'Please choose a start date.', 'err');
+  if (!desc) return say('lv-msg', 'Please write a reason for the leave.', 'err');
+  busy(true, 'Sending your application…');
+  api('applyLeave', {
+    type: $('lv-type').value, from: from, to: to,
+    description: desc, isEmergency: $('lv-emg').checked
+  }).then(function (d) {
+    busy(false);
+    say('lv-msg', d.message, d.unpaidDays > 0 ? 'err' : 'ok');
+    $('lv-desc').value = ''; $('lv-emg').checked = false;
+    clearMsg('lv-preview');
+    loadLeaves();
+  }).catch(function (e) { busy(false); say('lv-msg', e.message, 'err'); });
+}
+
+function cancelLeave(id) {
+  if (!confirm('Cancel this leave request?')) return;
+  busy(true, 'Cancelling…');
+  api('cancelLeave', { leaveId: id })
+    .then(function (d) { busy(false); say('lv-msg', d.message, 'ok'); loadLeaves(); })
+    .catch(function (e) { busy(false); say('lv-msg', e.message, 'err'); });
+}
+
+/********************* pay slip *********************/
+function loadSlipMonths() {
+  if ($('ps-month').options.length) return;
+  api('myPayslipMonths', {}).then(function (months) {
+    var sel = $('ps-month');
+    months.forEach(function (m) {
+      var o = document.createElement('option');
+      o.value = m; o.textContent = m;
+      sel.appendChild(o);
+    });
+  }).catch(function () {});
+}
+
+function loadSlip() {
+  busy(true, 'Building your pay slip…');
+  api('myPayslip', { month: $('ps-month').value })
+    .then(function (s) { busy(false); clearMsg('ps-msg'); renderSlip(s); })
+    .catch(function (e) { busy(false); say('ps-msg', e.message, 'err'); });
+}
+
+function renderSlip(s) {
+  var line = function (l, v) {
+    return '<div class="row" style="padding:7px 0;border-bottom:1px solid #f1f4f8">' +
+      '<span>' + l + '</span><b>' + v + '</b></div>';
+  };
+  var html =
+    '<div class="head"><b>' + esc(s.company.NAME) + '</b>' +
+      '<span>Salary Slip - ' + esc(s.monthName) + (s.generated ? '' : ' (provisional)') + '</span></div>' +
+    '<div class="sec" style="padding-top:12px">' +
+      line('Employee', esc(s.name)) + line('Employee ID', esc(s.empId)) +
+      line('Department', esc(s.department)) + line('Designation', esc(s.designation)) +
+      line('Joining date', esc(s.joiningDate || '-')) +
+      (s.bankName ? line('Bank', esc(s.bankName)) : '') +
+      (s.bankAccount ? line('A/C number', esc(s.bankAccount)) : '') +
+      (s.ifsc ? line('IFSC', esc(s.ifsc)) : '') +
+      (s.pan ? line('PAN', esc(s.pan)) : '') +
+    '</div>' +
+    '<div class="sect">EARNINGS</div><div class="sec">' +
+      line('Basic salary', money(s.salary)) +
+      line('Allowances', money(s.allowances)) +
+      line('Overtime (' + s.overtimeHours + ' hrs)', money(s.overtimeAmount)) +
+      line('<b>Gross salary</b>', '<b>' + money(s.gross) + '</b>') +
+    '</div>' +
+    '<div class="sect">ATTENDANCE</div><div class="sec">' +
+      line('Working days', s.workingDays) +
+      line('Present days', s.presentDays) +
+      line('Paid leave', s.paidLeaveDays) +
+      line('Unpaid leave', s.unpaidLeaveDays) +
+      line('Half days', s.halfDays) +
+      line('Absent days', s.absentDays) +
+      line('LOP days', s.lopDays) +
+      line('Late marks', s.lateMarks + ' (' + s.condonedLates + ' condoned, ' +
+           s.deductibleLates + ' charged)') +
+      line('Payable days', s.payableDays) +
+      line('Paid leave balance', s.paidLeaveBalance) +
+    '</div>' +
+    '<div class="sect">DEDUCTIONS</div><div class="sec">' +
+      line('Late mark deduction', money(s.lateDeduction)) +
+      line('Half day deduction', money(s.halfDayDeduction)) +
+      line('LOP deduction', money(s.lopDeduction)) +
+      line('Early exit deduction (' + s.earlyExitCount + ')', money(s.earlyExitDeduction)) +
+      line('Other deductions', money(s.otherDeduction)) +
+      line('<b>Total deductions</b>', '<b>' + money(s.totalDeductions) + '</b>') +
+    '</div>' +
+    '<div class="net"><span>NET SALARY</span><span>' + money(s.net) + '</span></div>' +
+    '<div class="sec" style="padding-top:10px"><div class="note">Per day salary ' +
+      money(s.perDay) + ' (salary / ' + s.workingDays + ' working days).' +
+      (s.generated ? '' : ' Final figures appear after admin generates payroll.') + '</div></div>';
+
+  $('slip').innerHTML = html;
+  show('slip'); show('ps-print');
+}
+
+/********************* camera *********************/
+function startPunch() { clearMsg('home-msg'); openCamera(); }
+
+/**
+ * SPEED: jaise hi camera khulta hai, GPS bhi background me maangna
+ * shuru kar dete hain. Jab tak employee photo leta hai, location aa
+ * chuki hoti hai - warna photo ke baad 10-20 second aur lagte the.
+ */
+function prefetchLocation() {
+  if (!navigator.geolocation) return;
+  S.pos = null;
+  navigator.geolocation.getCurrentPosition(function (pos) {
+    S.pos = { lat: pos.coords.latitude, lng: pos.coords.longitude,
+              acc: pos.coords.accuracy, at: Date.now() };
+  }, function () { S.pos = null; },
+     { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+}
+
+function openCamera() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    return say('home-msg', 'Camera is not available on this device or browser.', 'err');
+  }
+  prefetchLocation();
+  $('camera').classList.add('on');
+  $('cam-live').classList.remove('hide');
+  $('cam-confirm').classList.add('hide');
+  $('cam-canvas').classList.add('hide');
+  $('cam-video').classList.remove('hide');
+
+  navigator.mediaDevices.getUserMedia({
+    video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 960 } },
+    audio: false
+  }).then(function (stream) {
+    S.stream = stream;
+    $('cam-video').srcObject = stream;
+  }).catch(function () {
+    closeCamera();
+    say('home-msg', 'Please allow camera access.', 'err',
+      'Open your browser settings, allow the camera for this page, then try again.');
+  });
+}
+
+function shoot() {
+  var v = $('cam-video'), c = $('cam-canvas');
+  if (!v.videoWidth) return;
+  var w = 560, h = Math.round(v.videoHeight / v.videoWidth * 560);
+  c.width = w; c.height = h;
+  c.getContext('2d').drawImage(v, 0, 0, w, h);
+  S.photo = c.toDataURL('image/jpeg', 0.62);   // chhoti file = tez upload
+  v.classList.add('hide'); c.classList.remove('hide');
+  $('cam-live').classList.add('hide');
+  $('cam-confirm').classList.remove('hide');
+}
+
+function retake() {
+  S.photo = null;
+  $('cam-canvas').classList.add('hide');
+  $('cam-video').classList.remove('hide');
+  $('cam-live').classList.remove('hide');
+  $('cam-confirm').classList.add('hide');
+}
+
+function closeCamera() {
+  if (S.stream) { S.stream.getTracks().forEach(function (t) { t.stop(); }); S.stream = null; }
+  $('camera').classList.remove('on');
+}
+
+function confirmPhoto() { closeCamera(); getLocationThenSend(); }
+
+/********************* GPS + save *********************/
+function getLocationThenSend() {
+  if (!navigator.geolocation) {
+    return say('home-msg', 'Location is not available on this device.', 'err');
+  }
+
+  // camera khulte waqt jo location li thi, agar 90 second se nayi hai
+  // to dobara mangne ki zaroorat nahi - seedha bhej do
+  if (S.pos && (Date.now() - S.pos.at) < 90000) {
+    return send(S.pos.lat, S.pos.lng, S.pos.acc);
+  }
+
+  busy(true, 'Checking your location…');
+  navigator.geolocation.getCurrentPosition(function (pos) {
+    send(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+  }, function (err) {
+    busy(false);
+    say('home-msg', (err && err.code === 1)
+      ? 'Please allow location access.'
+      : 'Could not read your location. Move to an open area and try again.', 'err');
+  }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+}
+
+function send(lat, lng, acc) {
+  busy(true, S.mode === 'IN' ? 'Saving your attendance…' : 'Saving your check out…');
+  api(S.mode === 'IN' ? 'checkIn' : 'checkOut', {
+    photo: S.photo, lat: lat, lng: lng, accuracy: acc
+  }).then(function (d) {
+    busy(false); S.photo = null;
+    if (d.saved) {
+      say('home-msg', d.message, 'ok',
+        d.distance !== undefined ? 'Distance from site: ' + d.distance + ' m' : '');
+    } else {
+      say('home-msg', d.message, 'err',
+        'Your distance: ' + d.distance + ' m  |  Allowed: ' + d.allowed + ' m');
+    }
+    // SPEED: dashboard saath hi aa gaya - dusri request ki zaroorat nahi
+    if (d.dashboard) {
+      try { localStorage.setItem('att_dash', JSON.stringify(d.dashboard)); } catch (e) {}
+      paintHome(d.dashboard);
+    } else {
+      loadHome(true);
+    }
+  }).catch(function (e) {
+    busy(false); S.photo = null;
+    say('home-msg', e.message, 'err');
+  });
+}
+
+/********************* start *********************/
+(function init() {
+  var t = today();
+  $('lv-from').value = t; $('lv-to').value = t;
+  try {
+    var tok = localStorage.getItem('att_token');
+    if (tok) {
+      S.token = tok;
+      hide('view-login'); show('view-home');
+      loadHome();
+    }
+  } catch (e) {}
+  $('in-pw').addEventListener('keydown', function (e) { if (e.key === 'Enter') doLogin(); });
+})();
+</script>
+</body>
+</html>
