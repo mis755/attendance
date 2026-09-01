@@ -2210,10 +2210,10 @@ function applyLeave(p) {
     days: days,
     paidDays: split.paid,
     unpaidDays: split.unpaid,
-    message: 'Leave request bhej di gayi hai. ' +
+    message: 'Leave request submitted for approval. ' +
       (split.unpaid > 0
-        ? split.unpaid + ' din ki salary kategi (is mahine ka quota khatam).'
-        : 'Salary nahi kategi.')
+        ? split.unpaid + ' day(s) will be unpaid - this month\'s quota is finished.'
+        : 'No salary deduction.')
   };
 }
 
@@ -2259,19 +2259,20 @@ function previewLeave(p) {
 
   var dates = workingDatesBetween_(from, to, dept, String(emp['Employee ID']).trim());
   var split = splitPaidUnpaid_(String(emp['Employee ID']).trim(), dept, p.type, dates);
-  return {
-    days: dates.length,
-    paid: split.paid,
-    unpaid: split.unpaid,
-    note: dates.length === 0
-      ? 'Ye din pehle se holiday ya off hain - leave ki zaroorat nahi.'
-      : (split.paid === 0
-          ? 'Poori leave UNPAID hai - ' + split.unpaid + ' din ki salary katti hai.'
-          : (split.unpaid > 0
-              ? split.paid + ' din PAID, ' + split.unpaid +
-                ' din UNPAID (is mahine ka quota khatam ho gaya).'
-              : 'Poori leave PAID hai - salary nahi katti.'))
-  };
+
+  var note;
+  if (dates.length === 0) {
+    note = 'These dates are already holidays or off days - no leave needed.';
+  } else if (split.unpaid === 0) {
+    note = 'Fully paid leave - no salary deduction.';
+  } else if (split.paid === 0) {
+    note = 'Unpaid leave - ' + split.unpaid + ' day(s) salary will be deducted.';
+  } else {
+    note = split.paid + ' day(s) paid, ' + split.unpaid +
+           ' day(s) unpaid - this month\'s quota is finished.';
+  }
+
+  return { days: dates.length, paid: split.paid, unpaid: split.unpaid, note: note };
 }
 
 /**********************************************************************
