@@ -620,9 +620,13 @@ function loadLeaves() {
       $('lb-credit').textContent = d.balance.credited;
       $('lb-used').textContent = d.balance.used;
       $('lb-bal').textContent = d.balance.balance;
-      $('lb-note').textContent = d.balance.credited +
-        ' paid leave(s) are credited every month. Paid types: ' +
-        (d.paidTypes.length ? d.paidTypes.join(', ') : 'none') + '.';
+      var note = '';
+      (d.byType || []).forEach(function (t) {
+        if (!t.quota) return;
+        note += t.type + ': ' + t.left + ' of ' + t.quota + ' bachi hai.  ';
+      });
+      note += 'Unpaid Leave par hamesha salary katti hai.';
+      $('lb-note').textContent = note;
 
       var sel = $('lv-type');
       if (!sel.options.length) {
@@ -672,7 +676,7 @@ function previewLeave() {
     .then(function (d) {
       var el = $('lv-preview');
       el.className = 'msg show ' + (d.unpaid > 0 ? 'err' : 'info');
-      el.innerHTML = 'Leave days: <b style="display:inline">' + d.days + '</b> — ' + d.note;
+      el.innerHTML = 'Leave days: <b style="display:inline">' + d.days + '</b><br>' + d.note;
     })
     .catch(function () {});
 }
@@ -743,7 +747,8 @@ function renderSlip(s) {
     '<div class="sect">EARNINGS</div><div class="sec">' +
       line('Basic salary', money(s.salary)) +
       line('Allowances', money(s.allowances)) +
-      line('Overtime (' + s.overtimeHours + ' hrs)', money(s.overtimeAmount)) +
+      (s.otEnabled && s.overtimeHours
+        ? line('Overtime (' + s.overtimeHours + ' hrs)', money(s.overtimeAmount)) : '') +
       line('<b>Gross salary</b>', '<b>' + money(s.gross) + '</b>') +
     '</div>' +
     '<div class="sect">ATTENDANCE</div><div class="sec">' +
@@ -761,7 +766,6 @@ function renderSlip(s) {
     '</div>' +
     '<div class="sect">DEDUCTIONS</div><div class="sec">' +
       line('Late mark deduction', money(s.lateDeduction)) +
-      line('Half day deduction', money(s.halfDayDeduction)) +
       line('LOP deduction', money(s.lopDeduction)) +
       line('Early exit deduction (' + s.earlyExitCount + ')', money(s.earlyExitDeduction)) +
       line('Other deductions', money(s.otherDeduction)) +
