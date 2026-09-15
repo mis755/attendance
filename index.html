@@ -802,7 +802,11 @@ function renderSlip(s) {
 }
 
 /********************* camera *********************/
-function startPunch() { clearMsg('home-msg'); openCamera(); }
+function startPunch() {
+  clearMsg('home-msg');
+  prefetchLocation();     // GPS abhi se maangna shuru - camera se pehle
+  openCamera();
+}
 
 /**
  * SPEED: jaise hi camera khulta hai, GPS bhi background me maangna
@@ -846,10 +850,10 @@ function openCamera() {
 function shoot() {
   var v = $('cam-video'), c = $('cam-canvas');
   if (!v.videoWidth) return;
-  var w = 560, h = Math.round(v.videoHeight / v.videoWidth * 560);
+  var w = 480, h = Math.round(v.videoHeight / v.videoWidth * 480);
   c.width = w; c.height = h;
   c.getContext('2d').drawImage(v, 0, 0, w, h);
-  S.photo = c.toDataURL('image/jpeg', 0.62);   // chhoti file = tez upload
+  S.photo = c.toDataURL('image/jpeg', 0.55);   // chhoti file = tez upload
   v.classList.add('hide'); c.classList.remove('hide');
   $('cam-live').classList.add('hide');
   $('cam-confirm').classList.remove('hide');
@@ -899,6 +903,7 @@ function send(lat, lng, acc) {
     photo: S.photo, lat: lat, lng: lng, accuracy: acc
   }).then(function (d) {
     busy(false); S.photo = null;
+
     if (d.saved) {
       say('home-msg', d.message, 'ok',
         d.distance !== undefined ? 'Distance from site: ' + d.distance + ' m' : '');
@@ -906,7 +911,7 @@ function send(lat, lng, acc) {
       say('home-msg', d.message, 'err',
         'Your distance: ' + d.distance + ' m  |  Allowed: ' + d.allowed + ' m');
     }
-    // SPEED: dashboard saath hi aa gaya - dusri request ki zaroorat nahi
+
     if (d.dashboard) {
       try { localStorage.setItem('att_dash', JSON.stringify(d.dashboard)); } catch (e) {}
       paintHome(d.dashboard);
@@ -914,10 +919,7 @@ function send(lat, lng, acc) {
       loadHome(true);
     }
   }).catch(function (e) {
-    // Kabhi-kabhi punch server par LAG JAATA hai lekin jawab kharab aata
-    // hai ("Server reply was not readable"). Pehle app usse fail maan
-    // leta tha aur employee dobara punch karta tha. Ab hum server se
-    // poochh kar confirm karte hain.
+    // The punch may have saved even though the reply failed - confirm it.
     busy(true, 'Checking with server…');
     setTimeout(function () {
       api('myDashboard', {}).then(function (d) {
