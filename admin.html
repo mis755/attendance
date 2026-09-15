@@ -347,7 +347,7 @@
         </div>
 
         <div class="panel">
-          <div class="ph"><h2>Pay slip</h2><p>Kisi bhi employee ka slip dekho ya email karo.</p></div>
+          <div class="ph"><h2>Pay slip</h2><p>View or email any employee's salary slip.</p></div>
           <div class="pb">
             <div class="filters">
               <div><label>Employee</label><select id="s-emp"></select></div>
@@ -362,7 +362,7 @@
 
         <div class="panel">
           <div class="ph"><h2>Month lock</h2>
-            <p>Locked month me employee punch ya leave nahi kar sakta. Kabhi bhi unlock kar sakte ho.</p></div>
+            <p>Employees cannot punch or apply for leave in a locked month. You can unlock any time.</p></div>
           <div class="scroll">
             <table>
               <thead><tr><th>Month</th><th>Status</th><th>Locked on</th><th>By</th><th>Action</th></tr></thead>
@@ -438,7 +438,7 @@ function api(action, payload) {
   var body = Object.assign({ action: action, token: S.token || '' }, payload || {});
   if (!API_URL || API_URL.indexOf('http') !== 0) {
     return Promise.reject(new Error(
-      'Setup incomplete: is file me API_URL line par apna /exec link paste karein.'));
+      'Setup incomplete: paste your /exec link into the API_URL line of this file.'));
   }
   var call = fetch(API_URL, {
     method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -836,16 +836,16 @@ function quickSlip(empId) {
 }
 
 function bankFile() {
-  if (!confirm('Bank transfer list banayein ' + $('p-month').value + ' ke liye?\n\n' +
-    'Note: ye sirf list banata hai - paisa aapko bank ke portal se bhejna hoga.')) return;
+  if (!confirm('Create the bank transfer list for ' + $('p-month').value + '?\n\n' +
+    'Note: this only builds the list - the transfer must be done from your bank portal.')) return;
   busy(true);
   api('adminBankFile', { month: $('p-month').value }).then(function (d) {
     busy(false);
     var msg = d.message + ' Sheet ka naam: BankTransfer';
     say('pay-msg', msg, d.missing && d.missing.length ? 'err' : 'ok');
     if (d.missing && d.missing.length) {
-      alert('In logon ke bank details adhoore hain:\n\n' + d.missing.join('\n') +
-        '\n\nEmployees sheet me Bank Name, Bank Account aur IFSC Code bharein.');
+      alert('Bank details are incomplete for these employees:\n\n' + d.missing.join('\n') +
+        '\n\nFill Bank Name, Bank Account and IFSC Code in the Employees sheet.');
     }
   }).catch(function (e) { busy(false); say('pay-msg', e.message, 'err'); });
 }
@@ -1062,7 +1062,7 @@ function renderSlip(s) {
 
     '<div style="padding:12px 22px;font-size:11px;color:#6b7787;line-height:1.6">' +
       'Per day salary ' + money2(s.perDay) + ' (' + money2(s.salary) + ' / ' +
-      s.workingDays + ' working days). Computer generated slip - signature ki zaroorat nahi.' +
+      s.workingDays + ' working days). Computer generated slip - no signature required.' +
     '</div>' +
   '</div>' +
   '<div style="text-align:center;margin-top:14px" class="noprint">' +
