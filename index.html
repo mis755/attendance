@@ -231,6 +231,8 @@
         <div class="rows" style="margin-top:14px">
           <div class="row"><span>Late marks used</span><b id="m-lm">0</b></div>
           <div class="row"><span>Paid leave balance</span><b id="m-bal">0</b></div>
+          <div class="row" id="m-pend-row" style="display:none">
+            <span>Pending leave requests</span><b id="m-pend">0</b></div>
         </div>
         <div id="m-lmnote" class="msg info show" style="margin-top:10px"></div>
       </div>
@@ -402,7 +404,7 @@ function api(action, payload) {
   var body = Object.assign({ action: action, token: S.token || '' }, payload || {});
   if (!API_URL || API_URL.indexOf('http') !== 0) {
     return Promise.reject(new Error(
-      'Setup incomplete: is file me API_URL line par apna /exec link paste karein.'));
+      'Setup incomplete: paste your /exec link into the API_URL line of this file.'));
   }
   var call = fetch(API_URL, {
     method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -410,7 +412,13 @@ function api(action, payload) {
   }).then(function (r) { return r.text(); })
     .then(function (txt) {
       var r;
-      try { r = JSON.parse(txt); } catch (e) { throw new Error('Server ka jawab samajh nahi aaya.'); }
+      try { r = JSON.parse(txt); }
+      catch (e) {
+        // HTML aaya matlab Apps Script ne error page bheja hai
+        throw new Error(/^\s*</.test(txt)
+          ? 'Server is busy right now. Please try again.'
+          : 'Could not read the server reply. Please try again.');
+      }
       if (!r.ok) throw new Error(r.error);
       return r.data;
     });
@@ -556,6 +564,17 @@ function paintHome(d) {
       $('m-lm').textContent = d.lateMarks.count + ' of ' + d.lateMarks.grace + ' free';
       $('m-bal').textContent = d.leaveBalance.balance + ' day(s)';
 
+      // pending leave - Today card par bhi aur nav par badge
+      var pend = d.pendingLeaves || { count: 0, days: 0 };
+      $('m-pend-row').style.display = pend.count ? 'flex' : 'none';
+      $('m-pend').textContent = pend.count + ' (' + pend.days + ' day)' +
+        (pend.nextFrom ? ' from ' + pend.nextFrom : '');
+      var badge = $('nav-badge');
+      if (badge) {
+        badge.textContent = pend.count;
+        badge.classList.toggle('hide', !pend.count);
+      }
+
       var note = $('m-lmnote');
       if (d.lateMarks.deductible > 0) {
         note.className = 'msg err show';
@@ -571,7 +590,7 @@ function paintHome(d) {
       var hl = $('hol-list');
       hl.innerHTML = '';
       if (!d.holidays.length) {
-        hl.innerHTML = '<div class="note">Aage koi holiday nahi hai.</div>';
+        hl.innerHTML = '<div class="note">No upcoming holidays.</div>';
       }
       var MON = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
       d.holidays.forEach(function (h) {
@@ -895,8 +914,30 @@ function send(lat, lng, acc) {
       loadHome(true);
     }
   }).catch(function (e) {
-    busy(false); S.photo = null;
-    say('home-msg', e.message, 'err');
+    // Kabhi-kabhi punch server par LAG JAATA hai lekin jawab kharab aata
+    // hai ("Server reply was not readable"). Pehle app usse fail maan
+    // leta tha aur employee dobara punch karta tha. Ab hum server se
+    // poochh kar confirm karte hain.
+    busy(true, 'Checking with server…');
+    setTimeout(function () {
+      api('myDashboard', {}).then(function (d) {
+        busy(false); S.photo = null;
+        var t = d.today;
+        var done = t && (S.mode === 'IN' ? t.checkIn !== '--' : t.checkOut !== '--');
+        if (done) {
+          say('home-msg', S.mode === 'IN'
+              ? 'Attendance marked at ' + t.checkIn + '.'
+              : 'Checked out at ' + t.checkOut + '.', 'ok');
+        } else {
+          say('home-msg', e.message, 'err', 'Please try once more.');
+        }
+        try { localStorage.setItem('att_dash', JSON.stringify(d)); } catch (x) {}
+        paintHome(d);
+      }).catch(function () {
+        busy(false); S.photo = null;
+        say('home-msg', e.message, 'err', 'Please try once more.');
+      });
+    }, 2500);
   });
 }
 
