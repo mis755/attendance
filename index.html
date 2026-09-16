@@ -508,6 +508,9 @@ function doLogin() {
         busy(false);
         try { localStorage.setItem('att_dash', JSON.stringify(d.dashboard)); } catch (e) {}
         paintHome(d.dashboard);
+        // Login sends a light version (no holidays / policy text) so it
+        // stays fast. Pull the full one quietly a moment later.
+        setTimeout(function () { loadHome(true); }, 1200);
       } else {
         loadHome();
       }
