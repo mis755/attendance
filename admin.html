@@ -440,18 +440,50 @@ function api(action, payload) {
     return Promise.reject(new Error(
       'Setup incomplete: paste your /exec link into the API_URL line of this file.'));
   }
-  var call = fetch(API_URL, {
-    method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify(body), redirect: 'follow'
-  }).then(function (r) { return r.text(); })
-    .then(function (txt) {
-      var r;
-      try { r = JSON.parse(txt); } catch (e) { throw new Error('Server reply was not readable.'); }
-      if (!r.ok) throw new Error(r.error);
-      return r.data;
-    });
 
-  return withTimeout(call, 45000);
+  /**
+   * Google sometimes answers with an HTML error page instead of JSON
+   * (server busy, a hiccup on their side, a slow request). That is not
+   * a real failure - the same request usually works a second later.
+   * So we try up to 3 times before giving up.
+   */
+  function attempt(tryNo) {
+    return fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(body),
+      redirect: 'follow',
+      cache: 'no-store'
+    }).then(function (r) { return r.text(); })
+      .then(function (txt) {
+        var r;
+        try {
+          r = JSON.parse(txt);
+        } catch (e) {
+          if (tryNo < 3) {
+            return new Promise(function (res) { setTimeout(res, tryNo * 1200); })
+              .then(function () { return attempt(tryNo + 1); });
+          }
+          throw new Error(/^\s*</.test(txt)
+            ? 'Server is busy right now. Please wait a moment and try again.'
+            : 'Could not read the server reply. Please try again.');
+        }
+        if (!r.ok) throw new Error(r.error);
+        return r.data;
+      })
+      .catch(function (err) {
+        // network dropped - retry too
+        if (tryNo < 3 && /fetch|network|load failed/i.test(String(err.message))) {
+          return new Promise(function (res) { setTimeout(res, tryNo * 1200); })
+            .then(function () { return attempt(tryNo + 1); });
+        }
+        throw err;
+      });
+  }
+
+  var call = attempt(1);
+
+  return withTimeout(call, 60000);
 }
 
 /* ---------------- helpers ---------------- */
@@ -525,7 +557,12 @@ function start() {
     if (b.masters) applyMasters(b.masters);
     if (b.dashboard) paintDashboard(b.dashboard);
     if (b.activity) paintActivity(b.activity);
-    if (b.masters && b.dashboard) return;
+    // everything arrived with the login - nothing more to fetch
+    if (b.masters && b.dashboard && b.activity) return;
+    // only part of it arrived - quietly fetch the rest
+    if (!b.masters) { loadMasters().then(function () { if (!b.dashboard) loadDashboard(); }); return; }
+    loadDashboard();
+    return;
   }
   loadMasters().then(function () { loadDashboard(); });
 }
