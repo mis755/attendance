@@ -411,13 +411,16 @@ var NO_RETRY = ['checkIn', 'checkOut', 'applyLeave', 'cancelLeave',
 function api(action, payload) {
   var body = Object.assign({ action: action, token: S.token || '' }, payload || {});
 
-  // A punch carries a photo. Re-sending it three times over a weak
-  // signal takes minutes, so those get ONE retry and a longer window.
-  // Everything else is small, so it can retry three times quickly.
-  var heavy = (action === 'checkIn' || action === 'checkOut');
-  var maxTries = heavy ? 2 : 3;
-  var waitMs = heavy ? 90000 : 45000;
-  var maxTries = (NO_RETRY.indexOf(action) === -1) ? 3 : 1;
+  // ONE rule for retries, not two.
+  //   Writes (punch, leave, payroll...) are never retried - a second
+  //   attempt could punch or approve twice. The screen checks with the
+  //   server instead.
+  //   Reads are safe to retry three times.
+  // A punch also carries a photo, so it gets a longer window.
+  var isWrite = (NO_RETRY.indexOf(action) !== -1);
+  var carriesPhoto = (action === 'checkIn' || action === 'checkOut');
+  var maxTries = isWrite ? 1 : 3;
+  var waitMs = carriesPhoto ? 90000 : 45000;
   if (!API_URL || API_URL.indexOf('http') !== 0) {
     return Promise.reject(new Error(
       'Setup incomplete: paste your /exec link into the API_URL line of this file.'));
