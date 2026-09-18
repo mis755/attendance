@@ -400,8 +400,24 @@ function withTimeout(promise, ms) {
   });
 }
 
+// Reads can be retried safely. Writes must not be - a second attempt
+// could punch twice or approve twice. For writes we fail once and let
+// the screen check with the server instead.
+var NO_RETRY = ['checkIn', 'checkOut', 'applyLeave', 'cancelLeave',
+                'adminLeaveDecision', 'adminRunPayroll', 'adminCloseDay',
+                'adminSetLock', 'adminEarlyExit', 'adminSaveNote',
+                'adminAddWeekOff', 'adminRemoveWeekOff', 'adminBankFile'];
+
 function api(action, payload) {
   var body = Object.assign({ action: action, token: S.token || '' }, payload || {});
+
+  // A punch carries a photo. Re-sending it three times over a weak
+  // signal takes minutes, so those get ONE retry and a longer window.
+  // Everything else is small, so it can retry three times quickly.
+  var heavy = (action === 'checkIn' || action === 'checkOut');
+  var maxTries = heavy ? 2 : 3;
+  var waitMs = heavy ? 90000 : 45000;
+  var maxTries = (NO_RETRY.indexOf(action) === -1) ? 3 : 1;
   if (!API_URL || API_URL.indexOf('http') !== 0) {
     return Promise.reject(new Error(
       'Setup incomplete: paste your /exec link into the API_URL line of this file.'));
@@ -426,7 +442,7 @@ function api(action, payload) {
         try {
           r = JSON.parse(txt);
         } catch (e) {
-          if (tryNo < 3) {
+          if (tryNo < maxTries) {
             return new Promise(function (res) { setTimeout(res, tryNo * 1200); })
               .then(function () { return attempt(tryNo + 1); });
           }
@@ -439,7 +455,7 @@ function api(action, payload) {
       })
       .catch(function (err) {
         // network dropped - retry too
-        if (tryNo < 3 && /fetch|network|load failed/i.test(String(err.message))) {
+        if (tryNo < maxTries && /fetch|network|load failed/i.test(String(err.message))) {
           return new Promise(function (res) { setTimeout(res, tryNo * 1200); })
             .then(function () { return attempt(tryNo + 1); });
         }
@@ -449,7 +465,7 @@ function api(action, payload) {
 
   var call = attempt(1);
 
-  return withTimeout(call, 60000);
+  return withTimeout(call, waitMs);
 }
 
 /********************* helpers *********************/
@@ -879,10 +895,10 @@ function openCamera() {
 function shoot() {
   var v = $('cam-video'), c = $('cam-canvas');
   if (!v.videoWidth) return;
-  var w = 480, h = Math.round(v.videoHeight / v.videoWidth * 480);
+  var w = 420, h = Math.round(v.videoHeight / v.videoWidth * 420);
   c.width = w; c.height = h;
   c.getContext('2d').drawImage(v, 0, 0, w, h);
-  S.photo = c.toDataURL('image/jpeg', 0.55);   // chhoti file = tez upload
+  S.photo = c.toDataURL('image/jpeg', 0.5);   // smaller file = much faster upload
   v.classList.add('hide'); c.classList.remove('hide');
   $('cam-live').classList.add('hide');
   $('cam-confirm').classList.remove('hide');
@@ -929,7 +945,8 @@ function getLocationThenSend() {
 function send(lat, lng, acc) {
   busy(true, S.mode === 'IN' ? 'Saving your attendance…' : 'Saving your check out…');
   api(S.mode === 'IN' ? 'checkIn' : 'checkOut', {
-    photo: S.photo, lat: lat, lng: lng, accuracy: acc
+    photo: S.photo, lat: lat, lng: lng, accuracy: acc,
+    skipDashboard: 'true'          // smaller, faster reply
   }).then(function (d) {
     busy(false); S.photo = null;
 
@@ -944,6 +961,8 @@ function send(lat, lng, acc) {
     if (d.dashboard) {
       try { localStorage.setItem('att_dash', JSON.stringify(d.dashboard)); } catch (e) {}
       paintHome(d.dashboard);
+      // the punch reply is a light one - top up holidays / policies later
+      setTimeout(function () { loadHome(true); }, 2000);
     } else {
       loadHome(true);
     }
