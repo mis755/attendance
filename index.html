@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Attendance - Check In</title>
+<!-- Opens the connection to Google while the page is still drawing, so
+     the first request does not pay for the TLS handshake. -->
+<link rel="preconnect" href="https://script.google.com" crossorigin>
+<link rel="dns-prefetch" href="https://script.google.com">
+<link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
 <style>
   :root{
     --ink:#0f2440; --ink-soft:#5b6b80; --line:#e2e8f0;
@@ -138,6 +143,24 @@
   @media (prefers-reduced-motion:reduce){.spin{animation:none}}
   .foot{text-align:center;color:var(--ink-soft);font-size:12px;margin-top:16px}
 
+  /* button spinner - login no longer covers the whole screen */
+  .btn-main .bspin{display:none;width:17px;height:17px;border:2.5px solid rgba(255,255,255,.35);
+    border-top-color:#fff;border-radius:50%;animation:sp .8s linear infinite;
+    vertical-align:-3px;margin-right:9px}
+  .btn-main.loading .bspin{display:inline-block}
+  .btn-main.loading{opacity:.9}
+
+  /* skeleton - the shape of the screen appears at once, data fills in */
+  .sk{background:linear-gradient(90deg,#eef1f5 25%,#e3e8ef 37%,#eef1f5 63%);
+    background-size:400% 100%;animation:shimmer 1.3s ease infinite;border-radius:6px;
+    color:transparent !important}
+  @keyframes shimmer{0%{background-position:100% 50%}100%{background-position:0 50%}}
+  @media (prefers-reduced-motion:reduce){.sk{animation:none}}
+
+  #offline{position:fixed;left:0;right:0;top:0;background:var(--absent);color:#fff;
+    text-align:center;padding:7px;font-size:13.5px;z-index:70;display:none}
+  #offline.on{display:block}
+
   /* pay slip */
   #slip{background:#fff;border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;margin-top:14px}
   #slip .head{background:var(--ink);color:#fff;padding:16px}
@@ -167,13 +190,17 @@
     <div class="card">
       <div class="field">
         <label for="in-id">Employee ID</label>
-        <input id="in-id" autocomplete="username" placeholder="E001" autocapitalize="characters">
+        <input id="in-id" autocomplete="username" placeholder="E001"
+               autocapitalize="characters" autocorrect="off" spellcheck="false"
+               enterkeyhint="next">
       </div>
       <div class="field">
         <label for="in-pw">Password</label>
-        <input id="in-pw" type="password" autocomplete="current-password" placeholder="••••">
+        <input id="in-pw" type="password" autocomplete="current-password"
+               placeholder="••••" enterkeyhint="go">
       </div>
-      <button class="btn-main" onclick="doLogin()">Log in</button>
+      <button id="btn-login" class="btn-main" onclick="doLogin()">
+        <span class="bspin"></span><span id="btn-login-text">Log in</span></button>
       <div id="login-msg" class="msg err"></div>
     </div>
     <div class="foot">Allow camera and location when your phone asks.</div>
@@ -230,7 +257,7 @@
         </div>
         <div class="rows" style="margin-top:14px">
           <div class="row"><span>Late marks used</span><b id="m-lm">0</b></div>
-          <div class="row"><span>Paid leave balance</span><b id="m-bal">0</b></div>
+          <div class="row"><span>Paid leave available</span><b id="m-bal">0</b></div>
           <div class="row" id="m-pend-row" style="display:none">
             <span>Pending leave requests</span><b id="m-pend">0</b></div>
         </div>
@@ -243,11 +270,16 @@
     <!-- ---------- TAB: LEAVES ---------- -->
     <div id="tab-leave" class="hide">
       <div class="card">
-        <h2>My leave balance</h2>
+        <h2>My paid leave <span id="lb-year" style="text-transform:none"></span></h2>
         <div class="grid3">
-          <div class="stat"><b id="lb-credit">0</b><span>Credited</span></div>
+          <div class="stat"><b id="lb-credit">0</b><span>Earned</span></div>
           <div class="stat"><b id="lb-used">0</b><span>Used</span></div>
           <div class="stat"><b id="lb-bal">0</b><span>Available</span></div>
+        </div>
+        <div class="rows" style="margin-top:12px">
+          <div class="row"><span>Full year allowance</span><b id="lb-year-max">0</b></div>
+          <div class="row"><span>Credited this month</span><b id="lb-month">0</b></div>
+          <div class="row"><span>Used this month</span><b id="lb-month-used">0</b></div>
         </div>
         <div class="note" id="lb-note"></div>
       </div>
@@ -272,6 +304,10 @@
         <div class="field" style="margin-top:12px">
           <label for="lv-desc">Description / reason</label>
           <textarea id="lv-desc" placeholder="Personal work"></textarea>
+        </div>
+        <div class="check" id="lv-half-row">
+          <input type="checkbox" id="lv-half" onchange="onHalfDayToggle()">
+          <label for="lv-half" style="margin:0">Half day only (uses 0.5 day)</label>
         </div>
         <div class="check">
           <input type="checkbox" id="lv-emg">
@@ -368,6 +404,8 @@
   </div>
 </div>
 
+<div id="offline">No internet connection</div>
+
 <div id="busy"><div><div class="spin"></div><div id="busy-text">Working…</div></div></div>
 
 <script>
@@ -381,16 +419,19 @@ var API_URL = 'https://script.google.com/macros/s/AKfycbykfrkZnuE-aYTjv82Bh7f0Ve
 /********************************************************************/
 
 var S = { token: null, profile: null, photo: null, mode: 'IN', stream: null,
-          dash: null, pos: null };
+          dash: null, pos: null, leaves: null, punching: false };
 
 /********************* API *********************/
 /** Never let a request hang forever - 45 seconds and we give up with a message. */
-function withTimeout(promise, ms) {
+function withTimeout(promise, ms, controller) {
   return new Promise(function (res, rej) {
     var done = false;
     var timer = setTimeout(function () {
       if (done) return;
       done = true;
+      // Actually stop the request instead of leaving it running in the
+      // background eating battery and data.
+      if (controller) { try { controller.abort(); } catch (e) {} }
       rej(new Error('The server did not respond. Please check your internet and try again.'));
     }, ms || 45000);
     promise.then(
@@ -408,37 +449,44 @@ var NO_RETRY = ['checkIn', 'checkOut', 'applyLeave', 'cancelLeave',
                 'adminSetLock', 'adminEarlyExit', 'adminSaveNote',
                 'adminAddWeekOff', 'adminRemoveWeekOff', 'adminBankFile'];
 
+/**
+ * One place for every server call.
+ *  - identical request already in flight?  reuse it instead of sending twice
+ *  - timed out?                            the request is actually aborted
+ *  - write?                                never retried (a second punch is worse
+ *                                          than an error message)
+ *  - read?                                 up to three tries
+ */
+var _inflight = {};
+
 function api(action, payload) {
   var body = Object.assign({ action: action, token: S.token || '' }, payload || {});
 
-  // ONE rule for retries, not two.
-  //   Writes (punch, leave, payroll...) are never retried - a second
-  //   attempt could punch or approve twice. The screen checks with the
-  //   server instead.
-  //   Reads are safe to retry three times.
-  // A punch also carries a photo, so it gets a longer window.
   var isWrite = (NO_RETRY.indexOf(action) !== -1);
   var carriesPhoto = (action === 'checkIn' || action === 'checkOut');
   var maxTries = isWrite ? 1 : 3;
   var waitMs = carriesPhoto ? 90000 : 45000;
+
   if (!API_URL || API_URL.indexOf('http') !== 0) {
     return Promise.reject(new Error(
       'Setup incomplete: paste your /exec link into the API_URL line of this file.'));
   }
 
-  /**
-   * Google sometimes answers with an HTML error page instead of JSON
-   * (server busy, a hiccup on their side, a slow request). That is not
-   * a real failure - the same request usually works a second later.
-   * So we try up to 3 times before giving up.
-   */
+  // A double tap, or two screens asking for the same thing at once,
+  // used to send two requests. Reads now share one.
+  var key = action + '|' + (payload && payload.month ? payload.month : '');
+  if (!isWrite && _inflight[key]) return _inflight[key];
+
+  var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+
   function attempt(tryNo) {
     return fetch(API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(body),
       redirect: 'follow',
-      cache: 'no-store'
+      cache: 'no-store',
+      signal: controller ? controller.signal : undefined
     }).then(function (r) { return r.text(); })
       .then(function (txt) {
         var r;
@@ -457,7 +505,9 @@ function api(action, payload) {
         return r.data;
       })
       .catch(function (err) {
-        // network dropped - retry too
+        if (err && err.name === 'AbortError') {
+          throw new Error('The server did not respond. Please try again.');
+        }
         if (tryNo < maxTries && /fetch|network|load failed/i.test(String(err.message))) {
           return new Promise(function (res) { setTimeout(res, tryNo * 1200); })
             .then(function () { return attempt(tryNo + 1); });
@@ -466,9 +516,14 @@ function api(action, payload) {
       });
   }
 
-  var call = attempt(1);
+  var call = withTimeout(attempt(1), waitMs, controller);
 
-  return withTimeout(call, waitMs);
+  if (!isWrite) {
+    _inflight[key] = call;
+    var clear = function () { delete _inflight[key]; };
+    call.then(clear, clear);
+  }
+  return call;
 }
 
 /********************* helpers *********************/
@@ -505,43 +560,100 @@ function go(tab) {
 }
 
 /********************* login *********************/
-function doLogin() {
+/**
+ * The slowest part of logging in is Apps Script waking up - one to
+ * three seconds before it even looks at the request. We spend that
+ * time while the employee is still typing: the first touch on the form
+ * sends a tiny "ping" that wakes the server. By the time Log in is
+ * pressed the server is already awake.
+ */
+var _warmed = false;
+function warmUp() {
+  if (_warmed || !navigator.onLine) return;
+  _warmed = true;
+  api('ping', {}).catch(function () { _warmed = false; });   // failure is harmless
+}
+
+function loginBusy(on, text) {
+  var b = $('btn-login');
+  if (!b) return;
+  b.classList.toggle('loading', !!on);
+  b.disabled = !!on;
+  $('btn-login-text').textContent = text || (on ? 'Signing in…' : 'Log in');
+}
+
+async function doLogin() {
   var id = $('in-id').value.trim(), pw = $('in-pw').value;
   if (!id || !pw) return say('login-msg', 'Enter your Employee ID and password.', 'err');
-  busy(true, 'Signing in…');
-  api('loginAny', { empId: id, password: pw })
-    .then(function (d) {
-      // Admin ne login kiya -> admin dashboard par bhej do
-      if (d.role === 'Admin') {
-        try { localStorage.setItem('att_admin_token', d.token); } catch (e) {}
-        busy(true, 'Opening admin dashboard…');
-        window.location.href = 'admin.html';
-        return;
-      }
-      S.token = d.token;
-      try { localStorage.setItem('att_token', d.token); } catch (e) {}
-      clearMsg('login-msg');
-      hide('view-login'); show('view-home');
-      // dashboard login ke saath hi aa gaya - dusri request ki zaroorat nahi
-      if (d.dashboard) {
-        busy(false);
-        try { localStorage.setItem('att_dash', JSON.stringify(d.dashboard)); } catch (e) {}
-        paintHome(d.dashboard);
-        setTimeout(function () { loadHome(true); }, 1200);
-      } else {
-        // Login now replies with the token only, so it is quick.
-        // loadHome() paints the saved copy first, then refreshes.
-        loadHome();
-      }
-    })
-    .catch(function (e) { busy(false); say('login-msg', e.message, 'err'); });
+  if (!navigator.onLine) {
+    return say('login-msg', 'No internet connection. Check your network and try again.', 'err');
+  }
+  if ($('btn-login').disabled) return;          // guards against a double tap
+
+  clearMsg('login-msg');
+  loginBusy(true, 'Signing in…');
+
+  try {
+    var d = await api('loginAny', { empId: id, password: pw });
+
+    if (d.role === 'Admin') {
+      try { localStorage.setItem('att_admin_token', d.token); } catch (e) {}
+      loginBusy(true, 'Opening admin…');
+      window.location.href = 'admin.html';
+      return;
+    }
+
+    S.token = d.token;
+    try {
+      localStorage.setItem('att_token', d.token);
+      localStorage.setItem('att_lastid', id);     // prefill next time
+    } catch (e) {}
+
+    loginBusy(false);
+    hide('view-login');
+    show('view-home');
+
+    if (d.dashboard) {
+      try { localStorage.setItem('att_dash', JSON.stringify(d.dashboard)); } catch (e) {}
+      paintHome(d.dashboard);
+      setTimeout(function () { loadHome(true); }, 1200);
+    } else {
+      // Login replies with the token only, so the screen is drawn as a
+      // skeleton straight away and filled in when the data lands.
+      showSkeleton(true);
+      await loadHome(true);
+      showSkeleton(false);
+    }
+  } catch (e) {
+    loginBusy(false);
+    say('login-msg', e.message, 'err');
+  }
+}
+
+/** Grey placeholder shapes while the first load is on its way. */
+function showSkeleton(on) {
+  ['h-name', 'h-emp', 'h-site', 'h-shift', 't-in', 't-out', 't-dist', 't-day',
+   'm-present', 'm-late', 'm-absent', 'm-lm', 'm-bal'].forEach(function (id) {
+    var el = $(id);
+    if (el) el.classList.toggle('sk', !!on);
+  });
+  var btn = $('btn-action');
+  if (btn) btn.disabled = !!on;
 }
 
 function doLogout() {
   api('logout', {}).catch(function () {});
-  try { localStorage.removeItem('att_token'); localStorage.removeItem('att_dash'); } catch (e) {}
-  S.token = null; S.dash = null;
+  try {
+    localStorage.removeItem('att_token');
+    localStorage.removeItem('att_dash');
+  } catch (e) {}
+  S.token = null; S.dash = null; S.leaves = null;
+  loginBusy(false);
   hide('view-home'); show('view-login');
+  try {
+    var last = localStorage.getItem('att_lastid');
+    if (last) { $('in-id').value = last; $('in-pw').value = ''; $('in-pw').focus(); }
+  } catch (e) {}
 }
 
 /********************* dashboard *********************/
@@ -558,14 +670,16 @@ function loadHome(silent) {
   if (!silent) busy(true, 'Loading your attendance…');
   else $('foot-time').textContent = 'Updating…';
 
-  api('myDashboard', {})
+  return api('myDashboard', {})
     .then(function (d) {
       busy(false);
+      showSkeleton(false);
       try { localStorage.setItem('att_dash', JSON.stringify(d)); } catch (e) {}
       paintHome(d);
     })
     .catch(function (e) {
       busy(false);
+      showSkeleton(false);
       if (/session/i.test(e.message)) { doLogout(); say('login-msg', e.message, 'err'); }
       else say('home-msg', e.message, 'err');
     });
@@ -679,23 +793,49 @@ function paintHome(d) {
 }
 
 /********************* leaves *********************/
-function loadLeaves() {
-  busy(true, 'Loading your leaves…');
+function loadLeaves(silent) {
+  // Opening the tab used to block on the server every time. Now the
+  // last copy is painted at once and refreshed quietly behind it.
+  if (S.leaves) { paintLeaves(S.leaves); silent = true; }
+  if (!silent) busy(true, 'Loading your leaves…');
+
   api('myLeaves', {})
     .then(function (d) {
       busy(false);
-      $('lb-credit').textContent = d.balance.credited;
-      $('lb-used').textContent = d.balance.used;
-      $('lb-bal').textContent = d.balance.balance;
+      S.leaves = d;
+      paintLeaves(d);
+    })
+    .catch(function (e) { busy(false); say('lv-msg', e.message, 'err'); });
+}
+
+function paintLeaves(d) {
+  (function () {
+      var y = d.year || {};
+      $('lb-credit').textContent = y.creditedSoFar != null ? y.creditedSoFar : d.balance.credited;
+      $('lb-used').textContent = y.usedSoFar != null ? y.usedSoFar : d.balance.used;
+      $('lb-bal').textContent = y.available != null ? y.available : d.balance.balance;
+      $('lb-year').textContent = y.startsFrom ? '(leave year from ' + y.startsFrom + ')' : '';
+      $('lb-year-max').textContent = (y.totalForYear || 0) + ' day(s)';
+      $('lb-month').textContent = (y.thisMonthCredit || 0) + ' day(s)';
+      $('lb-month-used').textContent = (y.usedThisMonth || 0) + ' day(s)';
+      $('lv-half-row').style.display = d.halfDayAllowed ? 'flex' : 'none';
       var paidBits = [], unpaidBits = [];
       (d.byType || []).forEach(function (t) {
         if (t.quota) paidBits.push(t.type + ': ' + t.left + ' / ' + t.quota + ' left');
         else unpaidBits.push(t.type);
       });
-      $('lb-note').textContent =
-        (paidBits.length ? 'PAID — ' + paidBits.join(' · ') + '. ' : '') +
-        (unpaidBits.length ? 'Always deducted: ' + unpaidBits.join(', ') + '. ' : '') +
-        'Leave beyond the monthly quota is deducted from salary.';
+      if (d.sharedPool) {
+        $('lb-note').textContent =
+          (y.thisMonthCredit || 2) + ' day(s) are added every month and build up to ' +
+          (y.totalForYear || 24) + ' for the year. Anything left from earlier months is used ' +
+          'first. Earned, Casual and Sick leave all come out of this balance. ' +
+          'Unpaid Leave is always deducted from salary.';
+      } else {
+        $('lb-note').textContent =
+          (paidBits.length ? 'PAID — ' + paidBits.join(' · ') + '. ' : '') +
+          (unpaidBits.length ? 'Always deducted: ' + unpaidBits.join(', ') + '. ' : '') +
+          'Leave beyond the monthly quota is deducted from salary.';
+      }
 
       var sel = $('lv-type');
       if (!sel.options.length) {
@@ -726,7 +866,8 @@ function loadLeaves() {
           '<div class="top"><b>' + esc(r.type) + '</b>' +
           '<span class="pill ' + sc(r.status) + '" style="font-size:11px;padding:3px 9px">' +
           esc(r.status) + '</span></div>' +
-          '<div class="sub">' + r.from + ' to ' + r.to + ' • ' + r.days + ' day(s)' +
+          '<div class="sub">' + r.from + (r.halfDay ? ' (half day)' : ' to ' + r.to) +
+          ' • ' + r.days + ' day(s)' +
           (r.unpaidDays ? ' • ' + r.unpaidDays + ' unpaid' : ' • paid') +
           (r.emergency ? ' • emergency' : '') + '</div>' +
           '<div class="sub">' + esc(r.description) + '</div>' +
@@ -738,10 +879,27 @@ function loadLeaves() {
     .catch(function (e) { busy(false); say('lv-msg', e.message, 'err'); });
 }
 
+function onHalfDayToggle() {
+  var half = $('lv-half').checked;
+  if (half) $('lv-to').value = $('lv-from').value;   // a half day is one date
+  $('lv-to').disabled = half;
+  previewLeave();
+}
+
+var _previewTimer = null;
 function previewLeave() {
+  // Changing type, from and to fired three separate requests. Wait
+  // until the user stops changing things, then ask once.
+  if (_previewTimer) clearTimeout(_previewTimer);
+  _previewTimer = setTimeout(previewLeaveNow, 450);
+}
+
+function previewLeaveNow() {
   var from = $('lv-from').value, to = $('lv-to').value || $('lv-from').value;
   if (!from) return;
-  api('previewLeave', { from: from, to: to, type: $('lv-type').value })
+  if ($('lv-half').checked) to = from;
+  api('previewLeave', { from: from, to: to, type: $('lv-type').value,
+                        halfDay: $('lv-half').checked })
     .then(function (d) {
       var el = $('lv-preview');
       el.className = 'msg show ' + (d.unpaid > 0 ? 'err' : 'info');
@@ -756,15 +914,18 @@ function submitLeave() {
   if (!from) return say('lv-msg', 'Please choose a start date.', 'err');
   if (!desc) return say('lv-msg', 'Please write a reason for the leave.', 'err');
   busy(true, 'Sending your application…');
+  if ($('lv-half').checked) to = from;
   api('applyLeave', {
     type: $('lv-type').value, from: from, to: to,
-    description: desc, isEmergency: $('lv-emg').checked
+    description: desc, isEmergency: $('lv-emg').checked,
+    halfDay: $('lv-half').checked
   }).then(function (d) {
     busy(false);
     say('lv-msg', d.message, d.unpaidDays > 0 ? 'err' : 'ok');
     $('lv-desc').value = ''; $('lv-emg').checked = false;
+    $('lv-half').checked = false; $('lv-to').disabled = false;
     clearMsg('lv-preview');
-    loadLeaves();
+    S.leaves = null; loadLeaves();
   }).catch(function (e) { busy(false); say('lv-msg', e.message, 'err'); });
 }
 
@@ -772,7 +933,8 @@ function cancelLeave(id) {
   if (!confirm('Cancel this leave request?')) return;
   busy(true, 'Cancelling…');
   api('cancelLeave', { leaveId: id })
-    .then(function (d) { busy(false); say('lv-msg', d.message, 'ok'); loadLeaves(); })
+    .then(function (d) { busy(false); say('lv-msg', d.message, 'ok');
+                         S.leaves = null; loadLeaves(); })
     .catch(function (e) { busy(false); say('lv-msg', e.message, 'err'); });
 }
 
@@ -851,9 +1013,9 @@ function renderSlip(s) {
 
 /********************* camera *********************/
 function startPunch() {
+  if (S.punching) return;        // guards against a double tap
   clearMsg('home-msg');
-  prefetchLocation();     // GPS abhi se maangna shuru - camera se pehle
-  openCamera();
+  openCamera();                  // openCamera starts the GPS itself
 }
 
 /**
@@ -883,7 +1045,9 @@ function openCamera() {
   $('cam-video').classList.remove('hide');
 
   navigator.mediaDevices.getUserMedia({
-    video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 960 } },
+    // We shrink the photo to 420 px before sending, so asking the phone
+    // for a 1280 px stream only made the camera slower to start.
+    video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
     audio: false
   }).then(function (stream) {
     S.stream = stream;
@@ -946,12 +1110,15 @@ function getLocationThenSend() {
 }
 
 function send(lat, lng, acc) {
-  busy(true, S.mode === 'IN' ? 'Saving your attendance…' : 'Saving your check out…');
+  if (S.punching) return;
+  S.punching = true;
+  $('btn-action').disabled = true;
+  busy(true, S.mode === 'IN' ? 'Uploading photo and saving…' : 'Saving your check out…');
   api(S.mode === 'IN' ? 'checkIn' : 'checkOut', {
     photo: S.photo, lat: lat, lng: lng, accuracy: acc,
     skipDashboard: 'true'          // smaller, faster reply
   }).then(function (d) {
-    busy(false); S.photo = null;
+    busy(false); S.photo = null; S.punching = false;
 
     if (d.saved) {
       say('home-msg', d.message, 'ok',
@@ -974,7 +1141,7 @@ function send(lat, lng, acc) {
     busy(true, 'Checking with server…');
     setTimeout(function () {
       api('myDashboard', {}).then(function (d) {
-        busy(false); S.photo = null;
+        busy(false); S.photo = null; S.punching = false;
         var t = d.today;
         var done = t && (S.mode === 'IN' ? t.checkIn !== '--' : t.checkOut !== '--');
         if (done) {
@@ -987,7 +1154,8 @@ function send(lat, lng, acc) {
         try { localStorage.setItem('att_dash', JSON.stringify(d)); } catch (x) {}
         paintHome(d);
       }).catch(function () {
-        busy(false); S.photo = null;
+        busy(false); S.photo = null; S.punching = false;
+        $('btn-action').disabled = false;
         say('home-msg', e.message, 'err', 'Please try once more.');
       });
     }, 2500);
@@ -995,18 +1163,56 @@ function send(lat, lng, acc) {
 }
 
 /********************* start *********************/
+function setOffline() {
+  var on = !navigator.onLine;
+  $('offline').classList.toggle('on', on);
+  if (!on) warmUp();          // back online - wake the server again
+}
+
 (function init() {
   var t = today();
   $('lv-from').value = t; $('lv-to').value = t;
+
+  // remember who logged in here last - one less thing to type
+  try {
+    var last = localStorage.getItem('att_lastid');
+    if (last) $('in-id').value = last;
+  } catch (e) {}
+
+  // Wake the server the moment the employee touches the form, so the
+  // cold start happens while they type instead of after they tap.
+  ['in-id', 'in-pw'].forEach(function (id) {
+    var el = $(id);
+    if (!el) return;
+    el.addEventListener('focus', warmUp, { once: true });
+    el.addEventListener('input', warmUp, { once: true });
+  });
+
+  // Enter moves on from the ID field and submits from the password field
+  $('in-id').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); $('in-pw').focus(); }
+  });
+  $('in-pw').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); doLogin(); }
+  });
+
+  window.addEventListener('online', setOffline);
+  window.addEventListener('offline', setOffline);
+  setOffline();
+
+  // A returning employee sees their own screen immediately - the saved
+  // copy is painted first and refreshed behind it.
   try {
     var tok = localStorage.getItem('att_token');
     if (tok) {
       S.token = tok;
       hide('view-login'); show('view-home');
       loadHome();
+      return;
     }
   } catch (e) {}
-  $('in-pw').addEventListener('keydown', function (e) { if (e.key === 'Enter') doLogin(); });
+
+  if (!$('in-id').value) $('in-id').focus();
 })();
 </script>
 </body>
