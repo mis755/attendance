@@ -811,11 +811,11 @@ function loadLeaves(silent) {
 }
 
 function paintLeaves(d) {
-  (function () {
       var y = d.year || {};
-      $('lb-credit').textContent = y.creditedSoFar != null ? y.creditedSoFar : d.balance.credited;
-      $('lb-used').textContent = y.usedSoFar != null ? y.usedSoFar : d.balance.used;
-      $('lb-bal').textContent = y.available != null ? y.available : d.balance.balance;
+      var bal = d.balance || {};
+      $('lb-credit').textContent = y.creditedSoFar != null ? y.creditedSoFar : (bal.credited || 0);
+      $('lb-used').textContent = y.usedSoFar != null ? y.usedSoFar : (bal.used || 0);
+      $('lb-bal').textContent = y.available != null ? y.available : (bal.balance || 0);
       $('lb-year').textContent = y.startsFrom ? '(leave year from ' + y.startsFrom + ')' : '';
       $('lb-year-max').textContent = (y.totalForYear || 0) + ' day(s)';
       $('lb-month').textContent = (y.thisMonthCredit || 0) + ' day(s)';
@@ -848,25 +848,27 @@ function paintLeaves(d) {
 
       var sel = $('lv-type');
       if (!sel.options.length) {
-        d.types.forEach(function (t) {
+        (d.types || []).forEach(function (t) {
           var o = document.createElement('option');
           o.value = t; o.textContent = t;
           sel.appendChild(o);
         });
       }
 
-      $('lc-pending').textContent = d.counts.pending;
-      $('lc-approved').textContent = d.counts.approved;
-      $('lc-rejected').textContent = d.counts.rejected;
-      $('lc-cancelled').textContent = d.counts.cancelled;
+      var counts = d.counts || { pending: 0, approved: 0, rejected: 0, cancelled: 0 };
+      $('lc-pending').textContent = counts.pending;
+      $('lc-approved').textContent = counts.approved;
+      $('lc-rejected').textContent = counts.rejected;
+      $('lc-cancelled').textContent = counts.cancelled;
 
       var badge = $('nav-badge');
-      badge.textContent = d.counts.pending;
-      badge.classList.toggle('hide', !d.counts.pending);
+      badge.textContent = counts.pending;
+      badge.classList.toggle('hide', !counts.pending);
 
       var box = $('lv-list');
-      box.innerHTML = d.list.length ? '' : '<div class="note">No applications yet.</div>';
-      d.list.forEach(function (r) {
+      var list = d.list || [];
+      box.innerHTML = list.length ? '' : '<div class="note">No applications yet.</div>';
+      list.forEach(function (r) {
         var el = document.createElement('div');
         el.className = 'item';
         var cancel = r.status === 'Pending'
@@ -884,8 +886,6 @@ function paintLeaves(d) {
           (cancel ? '<div style="margin-top:8px">' + cancel + '</div>' : '');
         box.appendChild(el);
       });
-    })
-    .catch(function (e) { busy(false); say('lv-msg', e.message, 'err'); });
 }
 
 function onHalfDayToggle() {
