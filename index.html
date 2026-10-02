@@ -280,6 +280,8 @@
           <div class="row"><span>Full year allowance</span><b id="lb-year-max">0</b></div>
           <div class="row"><span>Credited this month</span><b id="lb-month">0</b></div>
           <div class="row"><span>Used this month</span><b id="lb-month-used">0</b></div>
+          <div class="row" id="lb-join-row" style="display:none">
+            <span>Joined</span><b id="lb-join">—</b></div>
         </div>
         <div class="note" id="lb-note"></div>
       </div>
@@ -818,13 +820,20 @@ function paintLeaves(d) {
       $('lb-year-max').textContent = (y.totalForYear || 0) + ' day(s)';
       $('lb-month').textContent = (y.thisMonthCredit || 0) + ' day(s)';
       $('lb-month-used').textContent = (y.usedThisMonth || 0) + ' day(s)';
+      $('lb-join-row').style.display = y.joiningDate ? 'flex' : 'none';
+      $('lb-join').textContent = y.joiningDate || '—';
       $('lv-half-row').style.display = d.halfDayAllowed ? 'flex' : 'none';
       var paidBits = [], unpaidBits = [];
       (d.byType || []).forEach(function (t) {
         if (t.quota) paidBits.push(t.type + ': ' + t.left + ' / ' + t.quota + ' left');
         else unpaidBits.push(t.type);
       });
-      if (d.sharedPool) {
+      if (y.manual) {
+        $('lb-note').textContent =
+          'Your entitlement for this leave year is ' + (y.creditedSoFar || 0) +
+          ' day(s), set by the admin. ' + (y.usedSoFar || 0) + ' used, ' +
+          (y.available || 0) + ' available.';
+      } else if (d.sharedPool) {
         $('lb-note').textContent =
           (y.thisMonthCredit || 2) + ' day(s) are added every month and build up to ' +
           (y.totalForYear || 24) + ' for the year. Anything left from earlier months is used ' +
